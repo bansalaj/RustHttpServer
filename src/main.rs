@@ -15,7 +15,7 @@ fn handle_client(mut stream: TcpStream) {
             let parts: Vec<&str> = first_line.split_whitespace().collect();
             if parts.len() > 1 {
                 let path = parts[1];
-                let response = if path.contains('/') {
+                let response = if path == "/" {
                     "HTTP/1.1 200 OK\r\n\r\n"
                 } else {
                     "HTTP/1.1 404 Not Found\r\n\r\n"
