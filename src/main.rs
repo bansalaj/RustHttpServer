@@ -1,4 +1,5 @@
 
+use std::io::BufRead;
 // Uncomment this block to pass the first stage
 use std::net::TcpListener;
 use std::net::TcpStream;
@@ -11,6 +12,16 @@ struct HttpRequest {
     method: String,
     path: String,
     headers: std::collections::HashMap<String, String>,
+}
+
+impl HttpRequest {
+    fn print_request(&self) {
+        println!("method: {} , path: {}", self.method,self.path);
+
+        for(key, value) in&self.headers {
+            println!("{}: {}", key, value);
+        }
+    }
 }
 
 
@@ -40,7 +51,7 @@ fn parse_request(request_str: &str) -> HttpRequest {
     }
 }
 
-fn build_response(request: &HttpRequest, directory: Option<&str>) -> String {
+fn build_response(request: &HttpRequest,body: &str, directory: Option<&str>) -> String {
 
     if request.method == "GET" {
         if request.path == "/" {
@@ -76,6 +87,20 @@ fn build_response(request: &HttpRequest, directory: Option<&str>) -> String {
                 }
             }
         }
+    } else if request.method == "POST" {
+        if request.path.starts_with("/files/") {
+            if let Some(dir) = directory {
+                let relative_path = &request.path[7..];
+                let file_path = std::path::Path::new(dir).join(relative_path);
+
+                let result = std::fs::write(&file_path, body);
+
+                return match result {
+                    Ok(_) => "HTTP/1.1 201 Created\r\n\r\n".to_string(),
+                    Err(_) => "HTTP/1.1 500 Internal Server Error\r\n\r\n".to_string(),
+                };
+            }
+        }
     }
 
     "HTTP/1.1 404 Not Found\r\n\r\n".to_string()
@@ -83,14 +108,34 @@ fn build_response(request: &HttpRequest, directory: Option<&str>) -> String {
 
 fn handle_client(mut stream: TcpStream, directory: Option<&str>) {
     let mut reader = BufReader::new(&stream);
-    let mut buffer = [0; 1024];
+    let mut req_line = String::new();
 
-    if let Ok(_) = reader.read(&mut buffer) {
-        let request = parse_request(&String::from_utf8_lossy(&buffer));
-        let response = build_response(&request, directory);
-
-        stream.write_all(response.as_bytes()).unwrap();
+    while let Ok(bytes_read) = reader.read_line(&mut req_line) {
+        if bytes_read == 0 || req_line.ends_with("\r\n\r\n") {
+            break;
+        }        
     }
+
+    // Parse the request lines and headers
+    let request = parse_request(&req_line);
+    request.print_request();
+
+    let mut body = String::new();
+
+    if request.method == "POST" {
+        if let Some(content_length) = request.headers.get("Content-Length") {
+            if let Ok(length) = content_length.parse::<usize>() {
+                let mut body_buff = vec![0; length];
+                reader.read_exact(&mut body_buff).unwrap();
+                body = String::from_utf8(body_buff).unwrap();
+            }
+        }
+    }
+
+    let response = build_response(&request, &body, directory);
+
+    stream.write_all(response.as_bytes()).unwrap();
+    
     stream.flush().unwrap();
 }
 
