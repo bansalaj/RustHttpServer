@@ -60,7 +60,7 @@ fn build_response(request: &HttpRequest, directory: Option<&str>) -> String {
                     user_agent
                 );
             }
-        } else if request.path == "/files/" {
+        } else if request.path.starts_with("/files/") {
             if let Some(dir) = directory {
                 let relative_path = &request.path[7..];
                 let file_path = std::path::Path::new(dir).join(relative_path);
