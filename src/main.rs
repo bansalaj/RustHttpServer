@@ -1,9 +1,10 @@
+
 // Uncomment this block to pass the first stage
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::io::{Read, Write, BufReader};
 use std::thread;
-
+use clap::{App, Arg};
 
 
 struct HttpRequest {
@@ -39,7 +40,7 @@ fn parse_request(request_str: &str) -> HttpRequest {
     }
 }
 
-fn build_response(request: &HttpRequest) -> String {
+fn build_response(request: &HttpRequest, directory: Option<&str>) -> String {
 
     if request.method == "GET" {
         if request.path == "/" {
@@ -59,26 +60,41 @@ fn build_response(request: &HttpRequest) -> String {
                     user_agent
                 );
             }
+        } else if request.path == "/files/" {
+            if let Some(dir) = directory {
+                let relative_path = &request.path[7..];
+                let file_path = std::path::Path::new(dir).join(relative_path);
+
+                if file_path.exists() && file_path.is_file() {
+                    if let Ok(contents) = std::fs::read_to_string(&file_path) {
+                        return format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-length: {}\r\n\r\n{}",
+                            contents.len(),
+                            contents
+                        );
+                    }
+                }
+            }
         }
     }
 
     "HTTP/1.1 404 Not Found\r\n\r\n".to_string()
 }
 
-fn handle_client(mut stream: TcpStream) {
+fn handle_client(mut stream: TcpStream, directory: Option<&str>) {
     let mut reader = BufReader::new(&stream);
     let mut buffer = [0; 1024];
 
     if let Ok(_) = reader.read(&mut buffer) {
         let request = parse_request(&String::from_utf8_lossy(&buffer));
-        let response = build_response(&request);
+        let response = build_response(&request, directory);
 
         stream.write_all(response.as_bytes()).unwrap();
     }
     stream.flush().unwrap();
 }
 
-fn open_connection(ipaddr: &str) {
+fn open_connection(ipaddr: &str, directory: Option<String>) {
     let listener = TcpListener::bind(ipaddr).unwrap();
 
     for stream in listener.incoming() {
@@ -86,10 +102,10 @@ fn open_connection(ipaddr: &str) {
             Ok(_stream) => {
                 let client_addr = _stream.peer_addr().unwrap();
                 println!("Accepted new connection {}", client_addr);
-
+                let dir_clone = directory.clone();
                 // spawn a new thread for each connection
                 thread::spawn(move || {
-                    handle_client(_stream);
+                    handle_client(_stream, dir_clone.as_deref());
                 });
             }
             Err(e) => {
@@ -102,6 +118,18 @@ fn open_connection(ipaddr: &str) {
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
+    let matches = App::new("Http Server")
+        .version("1.0")
+        .author("Ajit Bansal")
+        .about("simple Rust http server")
+        .arg(Arg::with_name("directory")
+                .long("directory")
+                .value_name("DIRECTORY")
+                .help("sets a custom directory")
+                .takes_value(true))
+        .get_matches();
 
-    open_connection("127.0.0.1:4221")
+    let directory = matches.value_of("directory").map(String::from);
+
+    open_connection("127.0.0.1:4221", directory)
 }
