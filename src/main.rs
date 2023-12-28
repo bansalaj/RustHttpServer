@@ -2,6 +2,7 @@
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::io::{Read, Write, BufReader};
+use std::thread;
 
 
 
@@ -85,7 +86,11 @@ fn open_connection(ipaddr: &str) {
             Ok(_stream) => {
                 let client_addr = _stream.peer_addr().unwrap();
                 println!("Accepted new connection {}", client_addr);
-                handle_client(_stream);
+
+                // spawn a new thread for each connection
+                thread::spawn(move || {
+                    handle_client(_stream);
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
